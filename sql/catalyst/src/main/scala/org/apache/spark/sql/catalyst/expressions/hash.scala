@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.expressions
 
+import java.nio.ByteBuffer
+import com.google.common.hash.{HashFunction, Hashing}
 import java.math.{BigDecimal, RoundingMode}
 import java.security.{MessageDigest, NoSuchAlgorithmException}
 import java.util.zip.CRC32
@@ -542,12 +544,15 @@ case class Murmur3Hash(children: Seq[Expression], seed: Int) extends HashExpress
 }
 
 object Murmur3HashFunction extends InterpretedHashFunction {
+  val hashFunc: HashFunction = Hashing.murmur3_128
   override protected def hashInt(i: Int, seed: Long): Long = {
-    Murmur3_x86_32.hashInt(i, seed.toInt)
+    val intBytes = ByteBuffer.allocate(4).putInt(i).array()
+    hashFunc.hashBytes(intBytes, 0, 4).asInt().toLong
   }
 
   override protected def hashLong(l: Long, seed: Long): Long = {
-    Murmur3_x86_32.hashLong(l, seed.toInt)
+    val longBytes = ByteBuffer.allocate(8).putLong(l).array()
+    hashFunc.hashBytes(longBytes, 0, 8).asLong
   }
 
   override protected def hashUnsafeBytes(base: AnyRef, offset: Long, len: Int, seed: Long): Long = {
