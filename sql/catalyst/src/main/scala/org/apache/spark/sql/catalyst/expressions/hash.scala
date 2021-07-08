@@ -22,8 +22,11 @@ import java.nio.ByteBuffer
 import java.security.{MessageDigest, NoSuchAlgorithmException}
 import java.util.zip.CRC32
 
+import scala.annotation.tailrec
+
 import com.google.common.hash.{HashFunction, Hashing}
 import org.apache.commons.codec.digest.DigestUtils
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.codegen._
@@ -33,7 +36,6 @@ import org.apache.spark.unsafe.Platform
 import org.apache.spark.unsafe.hash.Murmur3_x86_32
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
-import scala.annotation.tailrec
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // This file defines all the expressions for hashing.
@@ -45,8 +47,7 @@ import scala.annotation.tailrec
  */
 @ExpressionDescription(
   usage = "_FUNC_(expr) - Returns an MD5 128-bit checksum as a hex string of `expr`.",
-  extended =
-    """
+  extended = """
     Examples:
       > SELECT _FUNC_('Spark');
        8cde774d6f7333752ed72cacddb05126
@@ -76,13 +77,11 @@ case class Md5(child: Expression) extends UnaryExpression with ImplicitCastInput
  */
 // scalastyle:off line.size.limit
 @ExpressionDescription(
-  usage =
-    """
+  usage = """
     _FUNC_(expr, bitLength) - Returns a checksum of SHA-2 family as a hex string of `expr`.
       SHA-224, SHA-256, SHA-384, and SHA-512 are supported. Bit length of 0 is equivalent to 256.
   """,
-  extended =
-    """
+  extended = """
     Examples:
       > SELECT _FUNC_('Spark', 256);
        529bc3b07127ecb7e53a4dcf1991d9152c24537d919178022b2c42657f79a26b
@@ -92,7 +91,6 @@ case class Sha2(left: Expression, right: Expression)
   extends BinaryExpression with Serializable with ImplicitCastInputTypes {
 
   override def dataType: DataType = StringType
-
   override def nullable: Boolean = true
 
   override def inputTypes: Seq[DataType] = Seq(BinaryType, IntegerType)
@@ -156,8 +154,7 @@ case class Sha2(left: Expression, right: Expression)
  */
 @ExpressionDescription(
   usage = "_FUNC_(expr) - Returns a sha1 hash value as a hex string of the `expr`.",
-  extended =
-    """
+  extended = """
     Examples:
       > SELECT _FUNC_('Spark');
        85f5955f4b27a9a4c2aab6ffe5d7189fc298b92c
@@ -184,8 +181,7 @@ case class Sha1(child: Expression) extends UnaryExpression with ImplicitCastInpu
  */
 @ExpressionDescription(
   usage = "_FUNC_(expr) - Returns a cyclic redundancy check value of the `expr` as a bigint.",
-  extended =
-    """
+  extended = """
     Examples:
       > SELECT _FUNC_('Spark');
        1557323817
@@ -223,25 +219,25 @@ case class Crc32(child: Expression) extends UnaryExpression with ImplicitCastInp
  * The hash value for an expression depends on its type and seed:
  *  - null:               seed
  *  - boolean:            turn boolean into int, 1 for true, 0 for false, and then use murmur3 to
- *    hash this int with seed.
+ *                        hash this int with seed.
  *  - byte, short, int:   use murmur3 to hash the input as int with seed.
  *  - long:               use murmur3 to hash the long input with seed.
  *  - float:              turn it into int: java.lang.Float.floatToIntBits(input), and hash it.
  *  - double:             turn it into long: java.lang.Double.doubleToLongBits(input), and hash it.
  *  - decimal:            if it's a small decimal, i.e. precision <= 18, turn it into long and hash
- *    it. Else, turn it into bytes and hash it.
+ *                        it. Else, turn it into bytes and hash it.
  *  - calendar interval:  hash `microseconds` first, and use the result as seed to hash `months`.
  *  - binary:             use murmur3 to hash the bytes with seed.
  *  - string:             get the bytes of string and hash it.
  *  - array:              The `result` starts with seed, then use `result` as seed, recursively
- *    calculate hash value for each element, and assign the element hash value
- *    to `result`.
+ *                        calculate hash value for each element, and assign the element hash value
+ *                        to `result`.
  *  - map:                The `result` starts with seed, then use `result` as seed, recursively
- *    calculate hash value for each key-value, and assign the key-value hash
- *    value to `result`.
+ *                        calculate hash value for each key-value, and assign the key-value hash
+ *                        value to `result`.
  *  - struct:             The `result` starts with seed, then use `result` as seed, recursively
- *    calculate hash value for each field, and assign the field hash value to
- *    `result`.
+ *                        calculate hash value for each field, and assign the field hash value to
+ *                        `result`.
  *
  * Finally we aggregate the hash values for each expression by the same way of struct.
  */
@@ -284,19 +280,18 @@ abstract class HashExpression[E] extends Expression {
     })
 
     ctx.addMutableState(ctx.javaType(dataType), ev.value, "")
-    ev.copy(code =
-      s"""
+    ev.copy(code = s"""
       ${ev.value} = $seed;
       $childrenHash""")
   }
 
   protected def nullSafeElementHash(
-                                     input: String,
-                                     index: String,
-                                     nullable: Boolean,
-                                     elementType: DataType,
-                                     result: String,
-                                     ctx: CodegenContext): String = {
+      input: String,
+      index: String,
+      nullable: Boolean,
+      elementType: DataType,
+      result: String,
+      ctx: CodegenContext): String = {
     val element = ctx.freshName("element")
 
     ctx.nullSafeExec(nullable, s"$input.isNullAt($index)") {
@@ -328,10 +323,10 @@ abstract class HashExpression[E] extends Expression {
     genHashLong(s"Double.doubleToLongBits($input)", result)
 
   protected def genHashDecimal(
-                                ctx: CodegenContext,
-                                d: DecimalType,
-                                input: String,
-                                result: String): String = {
+      ctx: CodegenContext,
+      d: DecimalType,
+      input: String,
+      result: String): String = {
     if (d.precision <= Decimal.MAX_LONG_DIGITS) {
       genHashLong(s"$input.toUnscaledLong()", result)
     } else {
@@ -358,12 +353,12 @@ abstract class HashExpression[E] extends Expression {
   }
 
   protected def genHashForMap(
-                               ctx: CodegenContext,
-                               input: String,
-                               result: String,
-                               keyType: DataType,
-                               valueType: DataType,
-                               valueContainsNull: Boolean): String = {
+      ctx: CodegenContext,
+      input: String,
+      result: String,
+      keyType: DataType,
+      valueType: DataType,
+      valueContainsNull: Boolean): String = {
     val index = ctx.freshName("index")
     val keys = ctx.freshName("keys")
     val values = ctx.freshName("values")
@@ -378,11 +373,11 @@ abstract class HashExpression[E] extends Expression {
   }
 
   protected def genHashForArray(
-                                 ctx: CodegenContext,
-                                 input: String,
-                                 result: String,
-                                 elementType: DataType,
-                                 containsNull: Boolean): String = {
+      ctx: CodegenContext,
+      input: String,
+      result: String,
+      elementType: DataType,
+      containsNull: Boolean): String = {
     val index = ctx.freshName("index")
     s"""
         for (int $index = 0; $index < $input.numElements(); $index++) {
@@ -392,10 +387,10 @@ abstract class HashExpression[E] extends Expression {
   }
 
   protected def genHashForStruct(
-                                  ctx: CodegenContext,
-                                  input: String,
-                                  result: String,
-                                  fields: Array[StructField]): String = {
+      ctx: CodegenContext,
+      input: String,
+      result: String,
+      fields: Array[StructField]): String = {
     val hashes = fields.zipWithIndex.map { case (field, index) =>
       nullSafeElementHash(input, index.toString, field.nullable, field.dataType, result, ctx)
     }
@@ -404,10 +399,10 @@ abstract class HashExpression[E] extends Expression {
 
   @tailrec
   private def computeHashWithTailRec(
-                                      input: String,
-                                      dataType: DataType,
-                                      result: String,
-                                      ctx: CodegenContext): String = dataType match {
+      input: String,
+      dataType: DataType,
+      result: String,
+      ctx: CodegenContext): String = dataType match {
     case NullType => ""
     case BooleanType => genHashBoolean(input, result)
     case ByteType | ShortType | IntegerType | DateType => genHashInt(input, result)
@@ -427,10 +422,10 @@ abstract class HashExpression[E] extends Expression {
   }
 
   protected def computeHash(
-                             input: String,
-                             dataType: DataType,
-                             result: String,
-                             ctx: CodegenContext): String = computeHashWithTailRec(input, dataType, result, ctx)
+      input: String,
+      dataType: DataType,
+      result: String,
+      ctx: CodegenContext): String = computeHashWithTailRec(input, dataType, result, ctx)
 
   protected def hasherClassName: String
 }
@@ -530,8 +525,7 @@ abstract class InterpretedHashFunction {
  */
 @ExpressionDescription(
   usage = "_FUNC_(expr1, expr2, ...) - Returns a hash value of the arguments.",
-  extended =
-    """
+  extended = """
     Examples:
       > SELECT _FUNC_('Spark', array(123), 2);
         -1321691492
@@ -630,8 +624,7 @@ case class HiveHash(children: Seq[Expression]) extends HashExpression[Int] {
 
     ctx.addMutableState(ctx.javaType(dataType), ev.value, "")
     ctx.addMutableState("int", childHash, s"$childHash = 0;")
-    ev.copy(code =
-      s"""
+    ev.copy(code = s"""
       ${ev.value} = $seed;
       $childrenHash""")
   }
@@ -657,10 +650,10 @@ case class HiveHash(children: Seq[Expression]) extends HashExpression[Int] {
     s"$result = $hasherClassName.hashUnsafeBytes($b, Platform.BYTE_ARRAY_OFFSET, $b.length);"
 
   override protected def genHashDecimal(
-                                         ctx: CodegenContext,
-                                         d: DecimalType,
-                                         input: String,
-                                         result: String): String = {
+      ctx: CodegenContext,
+      d: DecimalType,
+      input: String,
+      result: String): String = {
     s"""
       $result = ${HiveHashFunction.getClass.getName.stripSuffix("$")}.normalizeDecimal(
         $input.toJavaBigDecimal()).hashCode();"""
@@ -686,11 +679,11 @@ case class HiveHash(children: Seq[Expression]) extends HashExpression[Int] {
   }
 
   override protected def genHashForArray(
-                                          ctx: CodegenContext,
-                                          input: String,
-                                          result: String,
-                                          elementType: DataType,
-                                          containsNull: Boolean): String = {
+      ctx: CodegenContext,
+      input: String,
+      result: String,
+      elementType: DataType,
+      containsNull: Boolean): String = {
     val index = ctx.freshName("index")
     val childResult = ctx.freshName("childResult")
     s"""
@@ -704,12 +697,12 @@ case class HiveHash(children: Seq[Expression]) extends HashExpression[Int] {
   }
 
   override protected def genHashForMap(
-                                        ctx: CodegenContext,
-                                        input: String,
-                                        result: String,
-                                        keyType: DataType,
-                                        valueType: DataType,
-                                        valueContainsNull: Boolean): String = {
+      ctx: CodegenContext,
+      input: String,
+      result: String,
+      keyType: DataType,
+      valueType: DataType,
+      valueContainsNull: Boolean): String = {
     val index = ctx.freshName("index")
     val keys = ctx.freshName("keys")
     val values = ctx.freshName("values")
@@ -731,19 +724,17 @@ case class HiveHash(children: Seq[Expression]) extends HashExpression[Int] {
   }
 
   override protected def genHashForStruct(
-                                           ctx: CodegenContext,
-                                           input: String,
-                                           result: String,
-                                           fields: Array[StructField]): String = {
+      ctx: CodegenContext,
+      input: String,
+      result: String,
+      fields: Array[StructField]): String = {
     val localResult = ctx.freshName("localResult")
     val childResult = ctx.freshName("childResult")
     fields.zipWithIndex.map { case (field, index) =>
       s"""
          $childResult = 0;
-         ${
-        nullSafeElementHash(input, index.toString, field.nullable, field.dataType,
-          childResult, ctx)
-      }
+         ${nullSafeElementHash(input, index.toString, field.nullable, field.dataType,
+           childResult, ctx)}
          $localResult = (31 * $localResult) + $childResult;
        """
     }.mkString(
@@ -834,12 +825,12 @@ object HiveHashFunction extends InterpretedHashFunction {
    * Two differences wrt Hive due to how intervals are stored in Spark vs Hive:
    *
    * - If the `INTERVAL` is backed as HiveIntervalYearMonth in Hive, then this method will not
-   * produce Hive compatible result. The reason being Spark's representation of calendar does not
-   * have such categories based on the interval and is unified.
+   *   produce Hive compatible result. The reason being Spark's representation of calendar does not
+   *   have such categories based on the interval and is unified.
    *
    * - Spark's [[CalendarInterval]] has precision upto microseconds but Hive's
-   * HiveIntervalDayTime can store data with precision upto nanoseconds. So, any input intervals
-   * with nanosecond values will lead to wrong output hashes (ie. non adherent with Hive output)
+   *   HiveIntervalDayTime can store data with precision upto nanoseconds. So, any input intervals
+   *   with nanosecond values will lead to wrong output hashes (ie. non adherent with Hive output)
    */
   def hashCalendarInterval(calendarInterval: CalendarInterval): Long = {
     val totalSeconds = calendarInterval.microseconds / CalendarInterval.MICROS_PER_SECOND.toInt
@@ -848,7 +839,7 @@ object HiveHashFunction extends InterpretedHashFunction {
     val nanoSeconds =
       (calendarInterval.microseconds -
         (totalSeconds * CalendarInterval.MICROS_PER_SECOND.toInt)).toInt * 1000
-    (result * 37) + nanoSeconds
+     (result * 37) + nanoSeconds
   }
 
   override def hash(value: Any, dataType: DataType, seed: Long): Long = {
