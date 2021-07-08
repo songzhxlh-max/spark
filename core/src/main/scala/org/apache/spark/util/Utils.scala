@@ -1689,6 +1689,11 @@ private[spark] object Utils extends Logging {
     rawMod + (if (rawMod < 0) mod else 0)
   }
 
+  def nonNegativeModLong(x: Long, mod: Int): Int = {
+    val rawMod = x % mod
+    rawMod.toInt + (if (rawMod < 0) mod else 0)
+  }
+
   // Handles idiosyncrasies with hash (add more as required)
   // This method should be kept in sync with
   // org.apache.spark.network.util.JavaUtils#nonNegativeHash().

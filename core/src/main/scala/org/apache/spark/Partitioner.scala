@@ -17,8 +17,9 @@
 
 package org.apache.spark
 
+import com.google.common.hash.{HashFunction, Hashing}
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
-
+import java.nio.ByteBuffer
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
@@ -82,9 +83,20 @@ class HashPartitioner(partitions: Int) extends Partitioner {
 
   def numPartitions: Int = partitions
 
+  val hashFunc: HashFunction = Hashing.murmur3_128
+
   def getPartition(key: Any): Int = key match {
     case null => 0
-    case _ => Utils.nonNegativeMod(key.hashCode, numPartitions)
+    case longValue: Long =>
+      val longBytes = ByteBuffer.allocate(8).putLong(longValue).array()
+      val hash = hashFunc.hashBytes(longBytes, 0, 8).asLong
+      Utils.nonNegativeModLong(hash, numPartitions)
+    case intValue: Int =>
+      val intBytes = ByteBuffer.allocate(4).putInt(intValue).array()
+      val hash = hashFunc.hashBytes(intBytes, 0, 4).asInt()
+      Utils.nonNegativeMod(hash, numPartitions)
+    case _ =>
+      Utils.nonNegativeMod(key.hashCode, numPartitions)
   }
 
   override def equals(other: Any): Boolean = other match {
