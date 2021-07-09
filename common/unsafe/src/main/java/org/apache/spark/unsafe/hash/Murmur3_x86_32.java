@@ -44,8 +44,9 @@ public final class Murmur3_x86_32 {
   public static int hashInt(int input, int seed) {
     int k1 = mixK1(input);
     int h1 = mixH1(seed, k1);
-
-    return fmix(h1, 4);
+    int result = fmix(h1, 4);
+    System.out.println("666666666 spark hashint input="+input+" , result="+result);
+    return result;
   }
 
   public int hashUnsafeWords(Object base, long offset, int lengthInBytes) {
@@ -96,7 +97,9 @@ public final class Murmur3_x86_32 {
     k1 = mixK1(high);
     h1 = mixH1(h1, k1);
 
-    return fmix(h1, 8);
+    int result = fmix(h1, 8);
+    System.out.println("7777777777 spark hashlong input="+input+" , result="+result);
+    return result;
   }
 
   private static int mixK1(int k1) {
