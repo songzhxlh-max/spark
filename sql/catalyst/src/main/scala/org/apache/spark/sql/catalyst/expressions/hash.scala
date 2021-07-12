@@ -306,7 +306,7 @@ abstract class HashExpression[E] extends Expression {
     s"$result = $hasherClassName.hashInt($i, $result);"
 
   protected def genHashLong(l: String, result: String): String =
-    s"$result = $hasherClassName.hashLong_google($l);"
+    s"$result = $hasherClassName.hashLong_google($l, $result);"
 
   protected def genHashBytes(b: String, result: String): String = {
     val offset = "Platform.BYTE_ARRAY_OFFSET"

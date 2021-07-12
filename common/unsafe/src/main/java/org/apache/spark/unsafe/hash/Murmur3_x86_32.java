@@ -102,12 +102,6 @@ public final class Murmur3_x86_32 {
     return result;
   }
 
-  public static long hashLong_google(long input) {
-    long result = com.google.common.hash.Hashing.murmur3_128().hashLong(input).asLong();
-    System.out.println("555555555 spark hashLong_google input="+input+" , result="+result);
-    return result;
-  }
-
   private static int mixK1(int k1) {
     k1 *= C1;
     k1 = Integer.rotateLeft(k1, 15);
