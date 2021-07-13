@@ -155,10 +155,23 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     assert(requiredChildDistributions.length == children.length)
     assert(requiredChildOrderings.length == children.length)
 
+    // exclude eliminate signle shuffle when it's has two children
+    var isNeedReShuffle = false;
+    if (children.size > 1) {
+      val firstShardNum = children.apply(0).outputPartitioning.numPartitions
+      children.foreach { f =>
+        if (f.outputPartitioning.numPartitions != firstShardNum) isNeedReShuffle = true
+      }
+    }
+
     // Ensure that the operator's children satisfy their output distribution requirements:
     children = children.zip(requiredChildDistributions).map {
       case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
-        child
+        if (isNeedReShuffle) {
+          ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
+        } else {
+          child
+        }
       case (child, BroadcastDistribution(mode)) =>
         BroadcastExchangeExec(mode, child)
       case (child, distribution) =>
