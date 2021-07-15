@@ -21,6 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.eliminateSingleShuffleEnabled
 import org.apache.spark.sql.internal.SQLConf
 
 /**
@@ -155,9 +156,9 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     assert(requiredChildDistributions.length == children.length)
     assert(requiredChildOrderings.length == children.length)
 
-    // exclude eliminate signle shuffle when it's has two children
+    // exclude eliminate single shuffle when it's has two children
     var isNeedReShuffle = false;
-    if (children.size > 1) {
+    if (eliminateSingleShuffleEnabled.get && children.size > 1) {
       val firstShardNum = children.apply(0).outputPartitioning.numPartitions
       children.foreach { f =>
         if (f.outputPartitioning.numPartitions != firstShardNum) isNeedReShuffle = true
@@ -167,7 +168,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     // Ensure that the operator's children satisfy their output distribution requirements:
     children = children.zip(requiredChildDistributions).map {
       case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
-        if (isNeedReShuffle) {
+        if (eliminateSingleShuffleEnabled.get && isNeedReShuffle) {
           ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
         } else {
           child
@@ -280,4 +281,20 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
       }
     case operator: SparkPlan => ensureDistributionAndOrdering(operator)
   }
+}
+
+object EnsureRequirements {
+
+  val eliminateSingleShuffleEnabled = new ThreadLocal[Boolean]() {
+    override protected def initialValue = false
+  }
+
+  def setBucketJoinEnabled(bucketJoinEnabled: Boolean): Unit = {
+    eliminateSingleShuffleEnabled.set(bucketJoinEnabled)
+  }
+
+  def resetBucketJoinEnabled(): Unit = {
+    eliminateSingleShuffleEnabled.remove()
+  }
+
 }
