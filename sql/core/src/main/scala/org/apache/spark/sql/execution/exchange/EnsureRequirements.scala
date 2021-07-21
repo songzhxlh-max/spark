@@ -293,6 +293,10 @@ object EnsureRequirements {
     eliminateSingleShuffleEnabled.set(bucketJoinEnabled)
   }
 
+  def getBucketJoinEnabled(): Boolean = {
+    eliminateSingleShuffleEnabled.get()
+  }
+
   def resetBucketJoinEnabled(): Unit = {
     eliminateSingleShuffleEnabled.remove()
   }
