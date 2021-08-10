@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenInnerOfJoinEnabled, eliminateSingleShuffleEnabled}
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenInnerOfJoinEnabled, eliminateSingleShuffleEnabled, isAfterMergeJoin}
 import org.apache.spark.sql.internal.SQLConf
 
 /**
@@ -154,20 +154,36 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     if (outPartitioning != null
       && outPartitioning.isInstanceOf[PartitioningCollection]) {
       val partitionings = outPartitioning.asInstanceOf[PartitioningCollection].partitionings
-      if (partitionings.size > 0 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
-        val expressions = child.outputPartitioning.asInstanceOf[HashPartitioning].expressions
-        if (expressions.size > 0) {
-          val partitionName = expressions.apply(0).asInstanceOf[AttributeReference].name
-          if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) {
-            return true
-          }
-        }
+      if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
+        val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
+        expressions.foreach(expression => {
+          val partitionName = expression.asInstanceOf[AttributeReference].name
+          if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+        })
       }
     }
     false
   }
 
-  var isAfterJoin = false
+  private def isHashPartitioningMatch(childOutPartitioning: Partitioning
+                                      , distribution: Distribution): Boolean = {
+    if (childOutPartitioning != null
+      && childOutPartitioning.isInstanceOf[PartitioningCollection]) {
+      val partitionings = childOutPartitioning.asInstanceOf[PartitioningCollection].partitionings
+      if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
+        val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
+        distribution.asInstanceOf[ClusteredDistribution].clustering.foreach(e => {
+          val name = e.asInstanceOf[AttributeReference].name
+            .concat(EnsureRequirements.isHashPartitioningFromCube)
+          if (name.equals(expressions.apply(0).asInstanceOf[AttributeReference].name)) {
+            return true
+          }
+        }
+        )
+      }
+    }
+    false
+  }
 
   private def ensureDistributionAndOrdering(operator: SparkPlan): SparkPlan = {
     val requiredChildDistributions: Seq[Distribution] = operator.requiredChildDistribution
@@ -194,16 +210,15 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
             return ShuffleExchange(partitioning, child)
           } else {
             if (eliminateShuffleOpenInnerOfJoinEnabled.get) {
-              if (isHashPartitioningFromCube(child) && isAfterJoin) {
+              if (isHashPartitioningFromCube(child) && isAfterMergeJoin.get) {
                 val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
                 return ShuffleExchange(partitioning, child)
-              } else {
-                val canonicalName = child.getClass.getCanonicalName
-                if (canonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
-                  isAfterJoin = true
-                }
               }
             }
+          }
+          val canonicalName = child.getClass.getCanonicalName
+          if (canonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
+            EnsureRequirements.setAfterMergeJoin(true)
           }
         }
         child
@@ -260,6 +275,11 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
             if (child.outputPartitioning.guarantees(targetPartitioning)) {
               child
             } else {
+              if (eliminateSingleShuffleEnabled.get && !isAfterMergeJoin.get) {
+                if (isHashPartitioningMatch(child.outputPartitioning, distribution)) {
+                  return child
+                }
+              }
               child match {
                 // If child is an exchange, we replace it with
                 // a new one having targetPartitioning.
@@ -331,8 +351,17 @@ object EnsureRequirements {
     override protected def initialValue = false
   }
 
+  val isAfterMergeJoin = new ThreadLocal[Boolean]() {
+    override protected def initialValue = false
+  }
+
   def setEliminateShuffleOpenInnerOfJoinEnabled(ESOpenInnerOfJoinEnabled: Boolean): Unit = {
+    if (ESOpenInnerOfJoinEnabled) isAfterMergeJoin.set(false)
     eliminateShuffleOpenInnerOfJoinEnabled.set(ESOpenInnerOfJoinEnabled)
+  }
+
+  def setAfterMergeJoin(afterMergeJoin: Boolean): Unit = {
+    isAfterMergeJoin.set(afterMergeJoin)
   }
 
   def setBucketJoinEnabled(bucketJoinEnabled: Boolean): Unit = {
