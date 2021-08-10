@@ -269,9 +269,20 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
       val maxChildrenNumPartitions = children.map(_.outputPartitioning.numPartitions).max
       val useExistingPartitioning = children.zip(requiredChildDistributions).forall {
         case (child, distribution) =>
-          child.outputPartitioning.guarantees(
-            createPartitioning(distribution, maxChildrenNumPartitions))
+          var useHashPartitioning = false
+          if (eliminateSingleShuffleEnabled.get && !isAfterMergeJoin.get) {
+            if (isHashPartitioningMatch(child.outputPartitioning, distribution)) {
+              useHashPartitioning = true
+            }
+          }
+          if (useHashPartitioning) {
+            true
+          } else {
+            child.outputPartitioning.guarantees(
+              createPartitioning(distribution, maxChildrenNumPartitions))
+          }
       }
+
 
       children = if (useExistingPartitioning) {
         // We do not need to shuffle any child's output.
@@ -299,11 +310,6 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
             if (child.outputPartitioning.guarantees(targetPartitioning)) {
               child
             } else {
-              if (eliminateSingleShuffleEnabled.get && !isAfterMergeJoin.get) {
-                if (isHashPartitioningMatch(child.outputPartitioning, distribution)) {
-                  return child
-                }
-              }
               child match {
                 // If child is an exchange, we replace it with
                 // a new one having targetPartitioning.
