@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.exchange.EnsureRequirements.eliminateSingleShuffleEnabled
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenInnerOfJoinEnabled, eliminateSingleShuffleEnabled}
 import org.apache.spark.sql.internal.SQLConf
 
 /**
@@ -177,7 +177,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     assert(requiredChildOrderings.length == children.length)
 
     // exclude eliminate single shuffle when it's has two children
-    var isNeedReShuffle = false;
+    var isNeedReShuffle = false
     if (eliminateSingleShuffleEnabled.get && children.size > 1) {
       val firstShardNum = children.apply(0).outputPartitioning.numPartitions
       children.foreach { f =>
@@ -188,25 +188,25 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     // Ensure that the operator's children satisfy their output distribution requirements:
     children = children.zip(requiredChildDistributions).map {
       case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
-        if (eliminateSingleShuffleEnabled.get && isNeedReShuffle) {
-          ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
-        } else {
-          if (!eliminateSingleShuffleEnabled.get) {
-            return child
-          }
-          if (isHashPartitioningFromCube(child) && isAfterJoin) {
-            ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
+        if (eliminateSingleShuffleEnabled.get) {
+          if (isNeedReShuffle) {
+            val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
+            return ShuffleExchange(partitioning, child)
           } else {
-            val canonicalName = child.getClass.getCanonicalName
-            if (canonicalName.contains(EnsureRequirements.isCubeFileSourceScanExec)) {
-              isAfterJoin = false
+            if (eliminateShuffleOpenInnerOfJoinEnabled.get) {
+              if (isHashPartitioningFromCube(child) && isAfterJoin) {
+                val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
+                return ShuffleExchange(partitioning, child)
+              } else {
+                val canonicalName = child.getClass.getCanonicalName
+                if (canonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
+                  isAfterJoin = true
+                }
+              }
             }
-            if (canonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
-              isAfterJoin = true
-            }
-            child
           }
         }
+        child
       case (child, BroadcastDistribution(mode)) =>
         BroadcastExchangeExec(mode, child)
       case (child, distribution) =>
@@ -321,12 +321,18 @@ object EnsureRequirements {
 
   val isHashPartitioningFromCube = "CUBE_HASH_PARTITIONING"
 
-  val isCubeFileSourceScanExec = "CubeFileSourceScanExec"
-
   val isSortMergeJoinExec = "SortMergeJoinExec"
 
   val eliminateSingleShuffleEnabled = new ThreadLocal[Boolean]() {
     override protected def initialValue = false
+  }
+
+  val eliminateShuffleOpenInnerOfJoinEnabled = new ThreadLocal[Boolean]() {
+    override protected def initialValue = false
+  }
+
+  def setEliminateShuffleOpenInnerOfJoinEnabled(ESOpenInnerOfJoinEnabled: Boolean): Unit = {
+    eliminateShuffleOpenInnerOfJoinEnabled.set(ESOpenInnerOfJoinEnabled)
   }
 
   def setBucketJoinEnabled(bucketJoinEnabled: Boolean): Unit = {
