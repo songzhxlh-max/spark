@@ -151,38 +151,62 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
 
   private def isHashPartitioningFromCube(child: SparkPlan): Boolean = {
     val outPartitioning = child.outputPartitioning
-    if (outPartitioning != null
-      && outPartitioning.isInstanceOf[PartitioningCollection]) {
-      val partitionings = outPartitioning.asInstanceOf[PartitioningCollection].partitionings
-      if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
-        val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
+    outPartitioning match {
+      case HashPartitioning(expressions, numPartitions) =>
         expressions.foreach(expression => {
           val partitionName = expression.asInstanceOf[AttributeReference].name
           if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
         })
-      }
+        false
+      case PartitioningCollection(partitionings) =>
+        if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
+          val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
+          expressions.foreach(expression => {
+            val partitionName = expression.asInstanceOf[AttributeReference].name
+            if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+          })
+        }
+        false
+      case _ =>
+        false
     }
-    false
   }
 
   private def isHashPartitioningMatch(childOutPartitioning: Partitioning
                                       , distribution: Distribution): Boolean = {
-    if (childOutPartitioning != null
-      && childOutPartitioning.isInstanceOf[PartitioningCollection]) {
-      val partitionings = childOutPartitioning.asInstanceOf[PartitioningCollection].partitionings
-      if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
-        val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
-        distribution.asInstanceOf[ClusteredDistribution].clustering.foreach(e => {
-          val name = e.asInstanceOf[AttributeReference].name
-            .concat(EnsureRequirements.isHashPartitioningFromCube)
-          if (name.equals(expressions.apply(0).asInstanceOf[AttributeReference].name)) {
-            return true
+    childOutPartitioning match {
+      case HashPartitioning(expressions, numPartitions) =>
+        if (distribution.isInstanceOf[ClusteredDistribution]) {
+          distribution.asInstanceOf[ClusteredDistribution].clustering.foreach(e => {
+            if (e.isInstanceOf[AttributeReference]) {
+              val name = e.asInstanceOf[AttributeReference].name
+                .concat(EnsureRequirements.isHashPartitioningFromCube)
+              if (name.equals(expressions.apply(0).asInstanceOf[AttributeReference].name)) {
+                return true
+              }
+            }
+          })
+        }
+        false
+      case PartitioningCollection(partitionings) =>
+        if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
+          val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
+          if (distribution.isInstanceOf[ClusteredDistribution]) {
+            distribution.asInstanceOf[ClusteredDistribution].clustering.foreach(e => {
+              if (e.isInstanceOf[AttributeReference]) {
+                val name = e.asInstanceOf[AttributeReference].name
+                  .concat(EnsureRequirements.isHashPartitioningFromCube)
+                if (name.equals(expressions.apply(0).asInstanceOf[AttributeReference].name)) {
+                  return true
+                }
+              }
+            })
           }
         }
-        )
-      }
+        false
+      case _ =>
+        false
     }
-    false
   }
 
   private def ensureDistributionAndOrdering(operator: SparkPlan): SparkPlan = {
