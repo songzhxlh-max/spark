@@ -21,7 +21,8 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenInnerOfJoinEnabled, eliminateSingleShuffleEnabled, isAfterMergeJoin}
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenInnerOfJoinEnabled, eliminateShuffleOpenWithInJoinEnabled, eliminateSingleShuffleEnabled, isAfterMergeJoin}
+import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.internal.SQLConf
 
 /**
@@ -156,7 +157,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
         expressions.foreach(expression => {
           if (expression.isInstanceOf[AttributeReference]) {
             val partitionName = expression.asInstanceOf[AttributeReference].name
-            if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+            if (partitionName.contains(EnsureRequirements.CubeHashPartitioning)) return true
           }
         })
         false
@@ -166,7 +167,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
           expressions.foreach(expression => {
             if (expression.isInstanceOf[AttributeReference]) {
               val partitionName = expression.asInstanceOf[AttributeReference].name
-              if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+              if (partitionName.contains(EnsureRequirements.CubeHashPartitioning)) return true
             }
           })
         }
@@ -201,13 +202,14 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
             ShuffleExchange(partitioning, child)
           } else {
             if (!isAfterMergeJoin.get
-              && child.getClass.getCanonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
+              && child.isInstanceOf[SortMergeJoinExec]) {
               EnsureRequirements.setAfterMergeJoin(true)
             }
-            if (eliminateShuffleOpenInnerOfJoinEnabled.get
-              && isHashPartitioningFromCube(child)
-              && isAfterMergeJoin.get) {
+            if (eliminateShuffleOpenWithInJoinEnabled.get
+              && isAfterMergeJoin.get
+              && isHashPartitioningFromCube(child)) {
                 val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
+                EnsureRequirements.setAfterMergeJoin(false)
                 ShuffleExchange(partitioning, child)
             } else {
               child
@@ -328,15 +330,13 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
 
 object EnsureRequirements {
 
-  val isHashPartitioningFromCube = "CUBE_HASH_PARTITIONING"
-
-  val isSortMergeJoinExec = "SortMergeJoinExec"
+  val CubeHashPartitioning = "CUBE_HASH_PARTITIONING"
 
   val eliminateSingleShuffleEnabled = new ThreadLocal[Boolean]() {
     override protected def initialValue = false
   }
 
-  val eliminateShuffleOpenInnerOfJoinEnabled = new ThreadLocal[Boolean]() {
+  val eliminateShuffleOpenWithInJoinEnabled = new ThreadLocal[Boolean]() {
     override protected def initialValue = false
   }
 
@@ -344,9 +344,8 @@ object EnsureRequirements {
     override protected def initialValue = false
   }
 
-  def setEliminateShuffleOpenInnerOfJoinEnabled(ESOpenInnerOfJoinEnabled: Boolean): Unit = {
-    if (ESOpenInnerOfJoinEnabled) isAfterMergeJoin.set(false)
-    eliminateShuffleOpenInnerOfJoinEnabled.set(ESOpenInnerOfJoinEnabled)
+  def setEliminateShuffleOpenInnerOfJoinEnabled(esOpenInnerOfJoinEnabled: Boolean): Unit = {
+    eliminateShuffleOpenWithInJoinEnabled.set(esOpenInnerOfJoinEnabled)
   }
 
   def setAfterMergeJoin(afterMergeJoin: Boolean): Unit = {
