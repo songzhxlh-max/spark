@@ -176,43 +176,6 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     }
   }
 
-  private def isHashPartitioningMatch(childOutPartitioning: Partitioning
-                                      , distribution: Distribution): Boolean = {
-    childOutPartitioning match {
-      case HashPartitioning(expressions, numPartitions) =>
-        if (distribution.isInstanceOf[ClusteredDistribution]) {
-          distribution.asInstanceOf[ClusteredDistribution].clustering.foreach(e => {
-            if (e.isInstanceOf[AttributeReference]) {
-              val name = e.asInstanceOf[AttributeReference].name
-                .concat(EnsureRequirements.isHashPartitioningFromCube)
-              if (name.equals(expressions.apply(0).asInstanceOf[AttributeReference].name)) {
-                return true
-              }
-            }
-          })
-        }
-        false
-      case PartitioningCollection(partitionings) =>
-        if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
-          val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
-          if (distribution.isInstanceOf[ClusteredDistribution]) {
-            distribution.asInstanceOf[ClusteredDistribution].clustering.foreach(e => {
-              if (e.isInstanceOf[AttributeReference]) {
-                val name = e.asInstanceOf[AttributeReference].name
-                  .concat(EnsureRequirements.isHashPartitioningFromCube)
-                if (name.equals(expressions.apply(0).asInstanceOf[AttributeReference].name)) {
-                  return true
-                }
-              }
-            })
-          }
-        }
-        false
-      case _ =>
-        false
-    }
-  }
-
   private def ensureDistributionAndOrdering(operator: SparkPlan): SparkPlan = {
     val requiredChildDistributions: Seq[Distribution] = operator.requiredChildDistribution
     val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
@@ -276,18 +239,8 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
       val maxChildrenNumPartitions = children.map(_.outputPartitioning.numPartitions).max
       val useExistingPartitioning = children.zip(requiredChildDistributions).forall {
         case (child, distribution) =>
-          var useHashPartitioning = false
-          if (eliminateSingleShuffleEnabled.get && !isAfterMergeJoin.get) {
-            if (isHashPartitioningMatch(child.outputPartitioning, distribution)) {
-              useHashPartitioning = true
-            }
-          }
-          if (useHashPartitioning) {
-            true
-          } else {
-            child.outputPartitioning.guarantees(
-              createPartitioning(distribution, maxChildrenNumPartitions))
-          }
+          child.outputPartitioning.guarantees(
+            createPartitioning(distribution, maxChildrenNumPartitions))
       }
 
       children = if (useExistingPartitioning) {
