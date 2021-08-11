@@ -362,6 +362,8 @@ object EnsureRequirements {
 
   def resetBucketJoinEnabled(): Unit = {
     eliminateSingleShuffleEnabled.remove()
+    isAfterMergeJoin.remove()
+    eliminateShuffleOpenWithInJoinEnabled.remove()
   }
 
 }
