@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenInnerOfJoinEnabled, eliminateShuffleOpenWithInJoinEnabled, eliminateSingleShuffleEnabled, isAfterMergeJoin}
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateShuffleOpenWithInJoinEnabled, eliminateSingleShuffleEnabled, isAfterMergeJoin}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.internal.SQLConf
 
