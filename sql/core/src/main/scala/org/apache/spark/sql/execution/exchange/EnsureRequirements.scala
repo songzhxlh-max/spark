@@ -154,16 +154,20 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     outPartitioning match {
       case HashPartitioning(expressions, numPartitions) =>
         expressions.foreach(expression => {
-          val partitionName = expression.asInstanceOf[AttributeReference].name
-          if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+          if (expression.isInstanceOf[AttributeReference]) {
+            val partitionName = expression.asInstanceOf[AttributeReference].name
+            if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+          }
         })
         false
       case PartitioningCollection(partitionings) =>
         if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
           val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
           expressions.foreach(expression => {
-            val partitionName = expression.asInstanceOf[AttributeReference].name
-            if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+            if (expression.isInstanceOf[AttributeReference]) {
+              val partitionName = expression.asInstanceOf[AttributeReference].name
+              if (partitionName.contains(EnsureRequirements.isHashPartitioningFromCube)) return true
+            }
           })
         }
         false
@@ -194,21 +198,24 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
         if (eliminateSingleShuffleEnabled.get) {
           if (isNeedReShuffle) {
             val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
-            return ShuffleExchange(partitioning, child)
+            ShuffleExchange(partitioning, child)
           } else {
-            if (eliminateShuffleOpenInnerOfJoinEnabled.get) {
-              if (isHashPartitioningFromCube(child) && isAfterMergeJoin.get) {
+            if (!isAfterMergeJoin.get
+              && child.getClass.getCanonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
+              EnsureRequirements.setAfterMergeJoin(true)
+            }
+            if (eliminateShuffleOpenInnerOfJoinEnabled.get
+              && isHashPartitioningFromCube(child)
+              && isAfterMergeJoin.get) {
                 val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
-                return ShuffleExchange(partitioning, child)
-              }
+                ShuffleExchange(partitioning, child)
+            } else {
+              child
             }
           }
-          val canonicalName = child.getClass.getCanonicalName
-          if (canonicalName.contains(EnsureRequirements.isSortMergeJoinExec)) {
-            EnsureRequirements.setAfterMergeJoin(true)
-          }
+        } else {
+          child
         }
-        child
       case (child, BroadcastDistribution(mode)) =>
         BroadcastExchangeExec(mode, child)
       case (child, distribution) =>
@@ -235,7 +242,6 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
           child.outputPartitioning.guarantees(
             createPartitioning(distribution, maxChildrenNumPartitions))
       }
-
 
       children = if (useExistingPartitioning) {
         // We do not need to shuffle any child's output.
