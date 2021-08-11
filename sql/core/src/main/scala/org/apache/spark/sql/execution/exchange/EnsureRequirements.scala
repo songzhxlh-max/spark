@@ -202,12 +202,13 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
             ShuffleExchange(partitioning, child)
           } else {
             if (eliminateShuffleOpenWithInJoinEnabled.get
+              && !isAfterMergeJoin.get
+              && child.isInstanceOf[SortMergeJoinExec]) {
+              EnsureRequirements.setAfterMergeJoin(true)
+            }
+            if (eliminateShuffleOpenWithInJoinEnabled.get
               && isAfterMergeJoin.get
               && isHashPartitioningFromCube(child)) {
-                if (!isAfterMergeJoin.get
-                  && child.isInstanceOf[SortMergeJoinExec]) {
-                  EnsureRequirements.setAfterMergeJoin(true)
-                }
                 val partitioning = createPartitioning(distribution, defaultNumPreShufflePartitions)
                 EnsureRequirements.setAfterMergeJoin(false)
                 ShuffleExchange(partitioning, child)
