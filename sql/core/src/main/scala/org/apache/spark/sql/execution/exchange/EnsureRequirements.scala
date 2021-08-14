@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateSingleShuffleEnabled}
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.eliminateSingleShuffleEnabled
 import org.apache.spark.sql.internal.SQLConf
 
 /**
@@ -183,12 +183,22 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     assert(requiredChildDistributions.length == children.length)
     assert(requiredChildOrderings.length == children.length)
 
+    // exclude eliminate single shuffle when it's has two children
+    var isNeedReShuffle = false;
+    if (eliminateSingleShuffleEnabled.get && children.size == 2) {
+      if (isCubeHashPartitioning(children.apply(0))
+        && !isCubeHashPartitioning(children.apply(1))) {
+        isNeedReShuffle = true
+      } else if (!isCubeHashPartitioning(children.apply(0))
+        && isCubeHashPartitioning(children.apply(1))) {
+        isNeedReShuffle = true
+      }
+    }
+
     // Ensure that the operator's children satisfy their output distribution requirements:
     children = children.zip(requiredChildDistributions).map {
       case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
-        if (eliminateSingleShuffleEnabled.get
-          && children.size > 1
-          && isCubeHashPartitioning(child)) {
+        if (eliminateSingleShuffleEnabled.get && isNeedReShuffle) {
           ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
         } else {
           child
