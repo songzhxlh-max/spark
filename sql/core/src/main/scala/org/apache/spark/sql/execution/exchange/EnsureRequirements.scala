@@ -149,6 +149,33 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     withCoordinator
   }
 
+  private def isCubeHashPartitioning(child: SparkPlan): Boolean = {
+    val outPartitioning = child.outputPartitioning
+    outPartitioning match {
+      case HashPartitioning(expressions, numPartitions) =>
+        expressions.foreach(expression => {
+          if (expression.isInstanceOf[AttributeReference]) {
+            val partitionName = expression.asInstanceOf[AttributeReference].name
+            if (partitionName.contains(EnsureRequirements._CUBE_HASH_PARTITIONING)) return true
+          }
+        })
+        false
+      case PartitioningCollection(partitionings) =>
+        if (partitionings.size == 1 && partitionings.apply(0).isInstanceOf[HashPartitioning]) {
+          val expressions = partitionings.apply(0).asInstanceOf[HashPartitioning].expressions
+          expressions.foreach(expression => {
+            if (expression.isInstanceOf[AttributeReference]) {
+              val partitionName = expression.asInstanceOf[AttributeReference].name
+              if (partitionName.contains(EnsureRequirements._CUBE_HASH_PARTITIONING)) return true
+            }
+          })
+        }
+        false
+      case _ =>
+        false
+    }
+  }
+
   private def ensureDistributionAndOrdering(operator: SparkPlan): SparkPlan = {
     val requiredChildDistributions: Seq[Distribution] = operator.requiredChildDistribution
     val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
@@ -156,16 +183,13 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     assert(requiredChildDistributions.length == children.length)
     assert(requiredChildOrderings.length == children.length)
 
-    // exclude eliminate single shuffle when it's has two children
-    var isNeedReShuffle = false;
-    if (eliminateSingleShuffleEnabled.get) {
-      if (bucketJoinFailed.get()) isNeedReShuffle = true
-    }
-
     // Ensure that the operator's children satisfy their output distribution requirements:
     children = children.zip(requiredChildDistributions).map {
       case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
-        if (eliminateSingleShuffleEnabled.get && isNeedReShuffle) {
+        if (eliminateSingleShuffleEnabled.get
+          && children.size > 1
+          && bucketJoinFailed.get()
+          && isCubeHashPartitioning(child)) {
           ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
         } else {
           child
@@ -281,6 +305,8 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
 }
 
 object EnsureRequirements {
+
+  val _CUBE_HASH_PARTITIONING = "_CUBE_HASH_PARTITIONING"
 
   val bucketJoinFailed = new ThreadLocal[Boolean]() {
     override protected def initialValue = false
