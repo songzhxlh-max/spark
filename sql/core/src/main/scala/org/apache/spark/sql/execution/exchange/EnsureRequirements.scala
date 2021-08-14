@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.exchange.EnsureRequirements.{bucketJoinFailed, eliminateSingleShuffleEnabled}
+import org.apache.spark.sql.execution.exchange.EnsureRequirements.{eliminateSingleShuffleEnabled}
 import org.apache.spark.sql.internal.SQLConf
 
 /**
@@ -188,7 +188,6 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
       case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
         if (eliminateSingleShuffleEnabled.get
           && children.size > 1
-          && bucketJoinFailed.get()
           && isCubeHashPartitioning(child)) {
           ShuffleExchange(createPartitioning(distribution, defaultNumPreShufflePartitions), child)
         } else {
@@ -307,14 +306,6 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
 object EnsureRequirements {
 
   val _CUBE_HASH_PARTITIONING = "_CUBE_HASH_PARTITIONING"
-
-  val bucketJoinFailed = new ThreadLocal[Boolean]() {
-    override protected def initialValue = false
-  }
-
-  def setBucketJoinFailed(): Unit = {
-    bucketJoinFailed.set(true)
-  }
 
   val eliminateSingleShuffleEnabled = new ThreadLocal[Boolean]() {
     override protected def initialValue = false
