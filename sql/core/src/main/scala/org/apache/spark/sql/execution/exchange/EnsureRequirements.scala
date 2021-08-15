@@ -186,11 +186,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     // exclude eliminate single shuffle when it's has two children
     var isNeedReShuffle = false;
     if (eliminateSingleShuffleEnabled.get && children.size == 2) {
-      if (isCubeHashPartitioning(children.apply(0))
-        && !isCubeHashPartitioning(children.apply(1))) {
-        isNeedReShuffle = true
-      } else if (!isCubeHashPartitioning(children.apply(0))
-        && isCubeHashPartitioning(children.apply(1))) {
+      if (isCubeHashPartitioning(children.apply(0)) ^ isCubeHashPartitioning(children.apply(1))) {
         isNeedReShuffle = true
       }
     }
