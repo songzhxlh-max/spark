@@ -89,8 +89,8 @@ case class WindowFunnel(windowLit: Expression,
   }
 
   val attachPropertiesNum = stepIdPropsArray.children.length
-  val cacheStepIdWithPropMap = new ConcurrentHashMap[String, Any]()
-  val attachPropMap = {
+  val cacheStepIdWithPropValueMap = new ConcurrentHashMap[String, Any]()
+  val cacheStepIdWithPropNameMap = {
     val propMap = new ConcurrentHashMap[Integer, util.HashSet[String]]()
     for (i <- 0 until attachPropertiesNum) {
       val children = stepIdPropsArray.children.apply(i)
@@ -118,7 +118,8 @@ case class WindowFunnel(windowLit: Expression,
     }
     val ts = toLong(eventTsCol, input)
     val dimValue = toString(dimValueExpr, input)
-    if (stepIdPropsArray != null) {
+    val attachPropNames = cacheStepIdWithPropNameMap.get(evtId)
+    if (stepIdPropsArray != null && attachPropNames != null) {
       val attachPropsArray = stepIdPropsArray.eval(input).asInstanceOf[GenericArrayData]
       val attachPropArray = new Array[Any](attachPropsArray.array.length)
       var index = 0
@@ -164,7 +165,7 @@ case class WindowFunnel(windowLit: Expression,
       }
     }).map(e =>
       longestSeqId(e._2,
-        cacheStepIdWithPropMap)
+        cacheStepIdWithPropValueMap)
     )
     val orderResult = result.toSeq.sortBy(e => (e._1, e._2))
     val maxDepId = orderResult.apply(0)
@@ -180,7 +181,7 @@ case class WindowFunnel(windowLit: Expression,
       val propertyColumn = nameExprs.apply(1)
       val propertyColumnName = propertyColumn.asInstanceOf[Literal].value
       val propertyColumnType = children.dataType.asInstanceOf[StructType].apply(i).dataType
-      val attachPropValue = cacheStepIdWithPropMap
+      val attachPropValue = cacheStepIdWithPropValueMap
         .get(maxDepId._2 + "_" + stepId + "_" + propertyColumnName)
       returnRow(i + 2) = generateData(attachPropValue, propertyColumnType)
     }
@@ -220,21 +221,6 @@ case class WindowFunnel(windowLit: Expression,
       ): (Int, Long) = {
 
     val sorted = events.sortBy(e => (e.ts, e.eid))
-    val startTimeStamp = sorted.apply(0).ts
-
-    sorted.foreach(e => {
-      val attachProps = attachPropMap.get(e.eid)
-      if (attachProps != null) {
-        val it = attachProps.iterator()
-        var index = 0
-        while (it.hasNext) {
-          val attachPropColName = it.next()
-          cacheStepIdWithPropMap.put(startTimeStamp + "_" + e.eid + "_" + attachPropColName,
-            e.attachPropsArray(index))
-          index = index + 1
-        }
-      }
-    })
 
     var maxStepId = -1
     val timestamps = Array.fill[Long](evtNum)(-1)
@@ -247,11 +233,26 @@ case class WindowFunnel(windowLit: Expression,
 
       if (timestamps.last > -1) {
         maxStepId = timestamps.length - 1
-        return (maxStepId, startTimeStamp)
       }
     })
 
     maxStepId = timestamps.lastIndexWhere(ts => ts > -1)
+    val startTimeStamp = timestamps.apply(0)
+
+    sorted.foreach(e => {
+      val attachProps = cacheStepIdWithPropNameMap.get(e.eid)
+      if (attachProps != null) {
+        val it = attachProps.iterator()
+        var index = 0
+        while (it.hasNext) {
+          val attachPropColName = it.next()
+          cacheStepIdWithPropMap.put(startTimeStamp + "_" + e.eid + "_" + attachPropColName,
+            e.attachPropsArray(index))
+          index = index + 1
+        }
+      }
+    })
+
     (maxStepId, startTimeStamp)
 
   }
