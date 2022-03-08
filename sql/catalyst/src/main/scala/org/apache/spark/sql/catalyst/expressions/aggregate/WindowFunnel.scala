@@ -127,7 +127,7 @@ case class WindowFunnel(windowLit: Expression,
         val stepId = attachDataArray.apply(0)
         val attachPropValue = attachDataArray.apply(1)
         if (evtId == stepId) {
-          attachPropArray(index) = attachPropValue.toString
+          attachPropArray(index) = attachPropValue
           index = index + 1
         }
       })
