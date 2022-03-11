@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, CreateArray, CreateNamed
 import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.UTF8StringBuilder
+import org.apache.spark.unsafe.types.UTF8String
 
 
 /**
@@ -90,17 +91,24 @@ case class WindowFunnel(windowLit: Expression,
 
   val attachProps = stepIdPropsArray.children
     .filter(e => e.isInstanceOf[CreateNamedStruct])
+  val attachPropsIndexMap = {
+    val attachPropsIndexMap = new ConcurrentHashMap[Expression, Integer]()
+    for (i <- 0 until attachProps.length) {
+      attachPropsIndexMap.put(attachProps.apply(i), i)
+    }
+    attachPropsIndexMap
+  }
   val attachPropNum = attachProps.length
   val cacheEvalStepIdPropsArrayExpressionMap = {
     val expressionMap = new ConcurrentHashMap[Integer, CreateArray]()
     if (stepIdPropsArray == null) {
       expressionMap
     } else {
-      var srcExpressionMap = new ConcurrentHashMap[Integer, util.HashSet[Expression]]()
+      var srcExpressionMap = new ConcurrentHashMap[Integer, util.ArrayList[Expression]]()
       attachProps.foreach(expression => {
         val stepId = expression.asInstanceOf[CreateNamedStruct].valExprs.apply(0).toString.toInt
         if (srcExpressionMap.get(stepId) == null) {
-          srcExpressionMap.put(stepId, new util.HashSet[Expression])
+          srcExpressionMap.put(stepId, new util.ArrayList[Expression])
         }
         srcExpressionMap.get(stepId).add(expression)
       })
@@ -134,8 +142,13 @@ case class WindowFunnel(windowLit: Expression,
       var index = 0
       attachPropsNameArray.array.foreach(e => {
         val attachPropValue = e.asInstanceOf[GenericInternalRow].values.apply(1)
-        println(attachPropValue)
-        attachPropsArray(index) = attachPropValue
+        if (attachPropValue.isInstanceOf[UTF8String]) {
+          val strBuilder = new UTF8StringBuilder
+          strBuilder.append("" + attachPropValue)
+          attachPropsArray(index) = strBuilder.build()
+        } else {
+          attachPropsArray(index) = attachPropValue
+        }
         index = index + 1
       })
       val event = Event(evtId, ts, dimValue, attachPropsArray)
@@ -216,18 +229,14 @@ case class WindowFunnel(windowLit: Expression,
     val sorted = events.sortBy(e => (e.ts, e.eid))
     var returnData = (-1, -1L, new Array[Any](attachPropNum))
     val currAttachPropsValues = new Array[Any](attachPropNum)
-    var attachPropIndex = -1
     var maxStepId = -1
     val timestamps = Array.fill[Long](evtNum)(-1)
+    var lastId = -1
     sorted.foreach(e => {
       if (e.eid == 0) {
-        attachPropIndex = -1
         val cacheAttachProps = cacheEvalStepIdPropsArrayExpressionMap.get(e.eid)
         if (cacheAttachProps != null) {
-          for (i <- 0 until cacheAttachProps.children.length) {
-            attachPropIndex = attachPropIndex + 1
-            currAttachPropsValues(attachPropIndex) = e.attachPropsArray(i)
-          }
+          assignAttachPropValue(cacheAttachProps, currAttachPropsValues, e)
         }
         if (timestamps(e.eid) == -1) {
           returnData = (e.eid, e.ts, currAttachPropsValues)
@@ -235,12 +244,11 @@ case class WindowFunnel(windowLit: Expression,
         timestamps(e.eid) = e.ts
       } else if (timestamps(e.eid -1) > -1 && timestamps(e.eid -1) + window >= e.ts) {
         val cacheAttachProps = cacheEvalStepIdPropsArrayExpressionMap.get(e.eid)
-        if (cacheAttachProps != null) {
-          for (i <- 0 until cacheAttachProps.children.length) {
-            attachPropIndex = attachPropIndex + 1
-            currAttachPropsValues(attachPropIndex) = e.attachPropsArray(i)
-          }
+        if (lastId != e.eid
+          && cacheAttachProps != null) {
+          assignAttachPropValue(cacheAttachProps, currAttachPropsValues, e)
         }
+        lastId = e.eid
         if (timestamps(e.eid) == -1) {
           returnData = (e.eid, timestamps(e.eid - 1), currAttachPropsValues)
         }
@@ -256,6 +264,23 @@ case class WindowFunnel(windowLit: Expression,
     maxStepId = timestamps.lastIndexWhere(ts => ts > -1)
     (maxStepId, returnData._2, returnData._3)
 
+  }
+
+  def assignAttachPropValue(cacheAttachProps: Expression,
+      currAttachPropsValues: Array[Any], e: Event): Unit = {
+    for (i <- 0 until cacheAttachProps.children.length) {
+      val curExpression = cacheAttachProps.children.apply(i)
+      val attachPropIndex = attachPropsIndexMap.get(curExpression)
+      if (currAttachPropsValues(attachPropIndex) == null) {
+        currAttachPropsValues(attachPropIndex) = e.attachPropsArray(i)
+      } else {
+        for (j <- 0 until attachProps.length) {
+          if (curExpression == attachProps.apply(j)) {
+            currAttachPropsValues(j) = e.attachPropsArray(i)
+          }
+        }
+      }
+    }
   }
 
   override def serialize(buffer: Seq[Event]): Array[Byte] = {
