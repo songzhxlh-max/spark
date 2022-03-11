@@ -242,6 +242,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       , (901, 1, "w0001", "888", 11L, 3.1d, 0.6f, null, 1600001L)
       , (901, 2, "w0002", "bb7", 12L, 3.2d, 0.7f, null, 1600002L)
       , (901, 3, "w0003", "bb8", 13L, 3.3d, 0.8f, null, 1600003L)
+      , (901, 6, "null6", "aa6", 6L, 2.6d, 0.6f, null, 1646364273998L)
       , (902, 1, "ee001", "cc1", 21L, 4.1d, 0.9f, null, 1001L)
       , (902, 2, "ee002", "cc2", 22L, 4.2d, 0.11f, null, 1002L)
       , (902, 3, "ee003", "cc3", 23L, 4.3d, 0.12f, null, 1003L)

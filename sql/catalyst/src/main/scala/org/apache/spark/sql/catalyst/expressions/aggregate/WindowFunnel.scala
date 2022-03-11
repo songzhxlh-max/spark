@@ -214,26 +214,20 @@ case class WindowFunnel(windowLit: Expression,
     }
   }
 
-  private def generateData(data: Any, dataType: DataType): Any = {
-    dataType match {
-      case StringType =>
-        val strBuilder = new UTF8StringBuilder
-        strBuilder.append(data + "")
-        strBuilder.build()
-      case _ => data
-    }
-  }
-
   private def longestSeqId(events: Seq[Event]): (Int, Long, Array[Any]) = {
 
-    val sorted = events.sortBy(e => (e.ts, e.eid))
     var returnData = (-1, -1L, new Array[Any](attachPropNum))
-    val currAttachPropsValues = new Array[Any](attachPropNum)
     var maxStepId = -1
+    if (evtNum < 1) {
+      return returnData
+    }
+    val attachCurrentPropValuesMap = new util.HashMap[Long, Array[Any]]()
+    val sorted = events.sortBy(e => (e.ts, e.eid))
     val timestamps = Array.fill[Long](evtNum)(-1)
     var lastId = -1
     sorted.foreach(e => {
       if (e.eid == 0) {
+        val currAttachPropsValues = new Array[Any](attachPropNum)
         val cacheAttachProps = cacheEvalStepIdPropsArrayExpressionMap.get(e.eid)
         if (cacheAttachProps != null) {
           assignAttachPropValue(cacheAttachProps, currAttachPropsValues, e)
@@ -242,15 +236,18 @@ case class WindowFunnel(windowLit: Expression,
           returnData = (e.eid, e.ts, currAttachPropsValues)
         }
         timestamps(e.eid) = e.ts
+        attachCurrentPropValuesMap.put(timestamps(e.eid), currAttachPropsValues)
       } else if (timestamps(e.eid -1) > -1 && timestamps(e.eid -1) + window >= e.ts) {
         val cacheAttachProps = cacheEvalStepIdPropsArrayExpressionMap.get(e.eid)
         if (lastId != e.eid
           && cacheAttachProps != null) {
-          assignAttachPropValue(cacheAttachProps, currAttachPropsValues, e)
+          assignAttachPropValue(cacheAttachProps,
+            attachCurrentPropValuesMap.get(timestamps(e.eid -1)), e)
         }
         lastId = e.eid
         if (timestamps(e.eid) == -1) {
-          returnData = (e.eid, timestamps(e.eid - 1), currAttachPropsValues)
+          returnData = (e.eid, timestamps(e.eid - 1),
+            attachCurrentPropValuesMap.get(timestamps(0)))
         }
         timestamps(e.eid) = timestamps(e.eid - 1)
       }
@@ -262,7 +259,7 @@ case class WindowFunnel(windowLit: Expression,
     })
 
     maxStepId = timestamps.lastIndexWhere(ts => ts > -1)
-    (maxStepId, returnData._2, returnData._3)
+    (maxStepId, returnData._2, attachCurrentPropValuesMap.get(returnData._2))
 
   }
 
