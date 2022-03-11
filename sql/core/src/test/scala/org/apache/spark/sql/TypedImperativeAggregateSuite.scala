@@ -227,31 +227,32 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
 
   // ignore("test window funnel") {
   test("test window funnel") {
-    val colNames = Seq("uid", "eid", "dim1", "dim2", "ts")
+    val colNames = Seq("uid", "eid", "dim1", "dim2", "dim3", "ts")
 
     val df1 = Seq(
-      // "uid", "eid", "dim1", "dim2", "ts"
+      // "uid", "eid", "dim1", "dim2", "dim3", "ts"
       // single sequence
-      (901, 1, null, "aa", 1646364222007L)
-      , (901, 2, null, "aa", 1646364236022L)
-      , (901, 3, null, "aa", 1646364251414L)
-      , (901, 4, null, "aa", 1646364263738L)
-      , (901, 5, null, "aa", 1646364273238L)
-      , (901, 1, null, "bb", 1600001L)
-      , (901, 2, null, "bb", 1600002L)
-      , (901, 3, null, "bb", 1600003L)
+      (901, 1, "null1", "aa1", null, 1646364222007L)
+      , (901, 2, "null2", "aa2", null, 1646364236022L)
+      , (901, 3, "null3", "aa3", null, 1646364251414L)
+      , (901, 4, "null4", "aa4", null, 1646364263738L)
+      , (901, 5, "null5", "aa5", null, 1646364273238L)
+      , (901, 1, "w01", "888", null, 1600001L)
+      , (901, 2, "w02", "bb7", null, 1600002L)
+      , (901, 3, "w03", "bb8", null, 1600003L)
       // single sequence (out of window)
-      , (902, 1, null, null, 1001L)
-      , (902, 2, null, null, 1002L)
-      , (902, 3, null, null, 1003L)
-      , (902, 4, null, null, 1004L)
-      , (902, 5, null, null, 1005L)
+      , (902, 1, "ee1", "cc1", null, 1001L)
+      , (902, 2, "ee2", "cc2", null, 1002L)
+      , (902, 3, "ee3", "cc3", null, 1003L)
+      , (902, 4, "ee4", "cc4", null, 1004L)
+      , (902, 5, "ee5", "cc5", null, 1005L)
     ).toDF(colNames: _*)
-    df1.createOrReplaceTempView("events")
+    df1.createOrReplaceTempView("events00")
     checkWindowAnswer(spark.sql(
       "select uid, " +
-        "window_funnel(10, 6, ts, eid - 1, dim2, array(struct(1,eid),struct(2,eid)))" +
-      " from events group by uid"), Seq((901, 5), (902, 2)))
+        "window_funnel(100000, 6, ts, eid - 1, dim3, " +
+        "struct(struct(1,eid),struct(2,dim1),struct(2,dim2)))" +
+      " from events00 group by uid"), Seq((901, 5), (902, 2)))
 
     val df2 = Seq(
       // "uid", "eid", "dim1", "dim2", "ts"
