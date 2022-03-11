@@ -226,7 +226,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
   }
 
   // ignore("test window funnel") {
-  test("test window funnel") {
+  ignore("test window funnel") {
     val colNames = Seq("uid", "eid", "dim1", "dim2",
       "o_dim1", "o_dim2", "o_dim3", "dim3", "ts")
 
