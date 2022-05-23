@@ -692,7 +692,8 @@ case class RegExpReplace(subject: Expression, regexp: Expression, rep: Expressio
       } else {
         ${ev.value} = $subject;
       }
-      $setEvNotNull
+    }
+    $setEvNotNull
     """
     })
   }
