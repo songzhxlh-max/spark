@@ -43,6 +43,10 @@ class StrictDataTypeWriteCompatibilitySuite extends DataTypeWriteCompatibilityBa
     }
   }
 
+  test("Check cast: decimalType to doubleType allowed") {
+    assert(canCast(DecimalType(30, 15).defaultConcreteType, DoubleType))
+  }
+
   test("Check array types: unsafe casts are not allowed") {
     val arrayOfLong = ArrayType(LongType)
     val arrayOfInt = ArrayType(IntegerType)
