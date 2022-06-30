@@ -45,6 +45,8 @@ class StrictDataTypeWriteCompatibilitySuite extends DataTypeWriteCompatibilityBa
 
   test("Check cast: decimalType to doubleType allowed") {
     assert(canCast(DecimalType(30, 15).defaultConcreteType, DoubleType))
+    assert(canCast(DecimalType(38, 18).defaultConcreteType, DoubleType))
+    assert(canCast(DecimalType(38, 6).defaultConcreteType, DoubleType))
   }
 
   test("Check array types: unsafe casts are not allowed") {
