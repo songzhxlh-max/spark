@@ -21,6 +21,8 @@ import java.nio.ByteBuffer
 import java.util
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Cast, CreateArray, CreateNamedStruct, Expression, GenericInternalRow, Literal}
@@ -46,7 +48,7 @@ case class WindowFunnel(windowLit: Expression,
                         stepIdPropsArray: Expression,
                         mutableAggBufferOffset: Int = 0,
                         inputAggBufferOffset: Int = 0)
-  extends TypedImperativeAggregate[Seq[Event]]
+  extends TypedImperativeAggregate[ListBuffer[Event]]
     with Serializable with Logging
     with SerializerSupport {
 
@@ -64,7 +66,7 @@ case class WindowFunnel(windowLit: Expression,
   lazy val window: Long = windowLit.eval().toString.toLong
   lazy val evtNum: Int = evtNumExpr.eval().toString.toInt
 
-  override def createAggregationBuffer(): Seq[Event] = Seq[Event]()
+  override def createAggregationBuffer(): ListBuffer[Event] = ListBuffer[Event]()
 
   def toIntegerArray(expr: Expression, input: InternalRow): Array[Int] = {
     expr.dataType match {
@@ -160,7 +162,7 @@ case class WindowFunnel(windowLit: Expression,
     }
   }
 
-  override def update(buffer: Seq[Event], input: InternalRow): Seq[Event] = {
+  override def update(buffer: ListBuffer[Event], input: InternalRow): ListBuffer[Event] = {
     val evtIdArray = toIntegerArray(evtConds, input)
     val ts = toLong(eventTsCol, input)
     if (ts < 0) {
@@ -200,12 +202,12 @@ case class WindowFunnel(windowLit: Expression,
 
   }
 
-  override def merge(buffer: Seq[Event],
-                     input: Seq[Event]): Seq[Event] = {
+  override def merge(buffer: ListBuffer[Event],
+                     input: ListBuffer[Event]): ListBuffer[Event] = {
     buffer ++ input
   }
 
-  override def eval(buffer: Seq[Event]): Any = {
+  override def eval(buffer: ListBuffer[Event]): Any = {
     if (buffer.length == 0) {
       val returnRow = new GenericInternalRow(2 + attachPropNum)
       returnRow(0) = -1
@@ -259,7 +261,7 @@ case class WindowFunnel(windowLit: Expression,
   }
 
 
-  private def longestSeqId(events: Seq[Event]): (Int, Long, Array[Any]) = {
+  private def longestSeqId(events: ListBuffer[Event]): (Int, Long, Array[Any]) = {
 
     val seqArrayLen = events.filter(_.eids.contains(0)).length
     var maxStepId = -1
@@ -377,11 +379,11 @@ case class WindowFunnel(windowLit: Expression,
     }
   }
 
-  override def serialize(buffer: Seq[Event]): Array[Byte] = {
+  override def serialize(buffer: ListBuffer[Event]): Array[Byte] = {
     serializerInstance.serialize(buffer).array()
   }
 
-  override def deserialize(storageFormat: Array[Byte]): Seq[Event] = {
+  override def deserialize(storageFormat: Array[Byte]): ListBuffer[Event] = {
     serializerInstance.deserialize(ByteBuffer.wrap(storageFormat))
   }
 
