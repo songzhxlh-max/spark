@@ -220,7 +220,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
     Column(max.toAggregateExpression())
   }
 
-  ignore("test attribution") {
+  test("test attribution") {
     val oneWeek = 604800000 // 7 * 60 * 60 * 24 * 1000
     val colNames = Seq("uid", "eid", "dim1", "dim2", "measure1", "measure2", "ts")
 
@@ -240,7 +240,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         , "[0.0];[0.0];[0.0];[1.0]"
         , "[0.25];[0.25];[0.25];[0.25]"
         , "[0.4];[0.1];[0.1];[0.4]"
-        , "[0.5];[0.5];[0.5];[1.0]"
+        , "[0.25];[0.25];[0.25];[0.5]"
       )
 
       model.zip(contrib).foreach { case (model, contrib) =>
@@ -283,7 +283,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       )
       assert("[WrappedArray(50.0, 500.0)];[WrappedArray(50.0, 500.0)]" ==
         df.selectExpr("event.measureContrib").collect().mkString(";"))
-      assert("[WrappedArray(foo, bar)];[WrappedArray(foo1, bar1)]" ==
+      assert("[WrappedArray(foo, bar)];[WrappedArray(foo2, bar2)]" ==
         df.selectExpr("event.groupingInfos").collect().mkString(";"))
     }
 
@@ -313,7 +313,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
 
       val result = spark.sql(sql)
         .selectExpr("event.name", "event.measureContrib").collect().mkString(";")
-      assert("[s2,WrappedArray(50.0)];[s3,WrappedArray(50.0)];[s4,WrappedArray(1000.0)]" == result)
+      assert("[d,WrappedArray()];[s4,WrappedArray(500.0)];[s4,WrappedArray(500.0)]" == result)
     }
 
     // test ahead
@@ -361,7 +361,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
           "from events group by uid) order by event.name"
         val result = spark.sql(sql)
           .selectExpr("event.name", "event.measureContrib").collect().mkString(";")
-        assert("[s2,WrappedArray(50.0)];[s3,WrappedArray(50.0)]" == result)
+        assert("[s2,WrappedArray(100.0)]" == result)
       }
     }
 
@@ -394,7 +394,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "from events group by uid) order by event.name"
       val result = spark
         .sql(sql).selectExpr("event.name", "event.measureContrib").collect().mkString(";")
-      assert("[s1,WrappedArray(1000.0)];[s2,WrappedArray(50.0)];[s4,WrappedArray(50.0)]" == result)
+      assert("[d,WrappedArray()];[s2,WrappedArray(50.0)];[s4,WrappedArray(50.0)]" == result)
     }
   }
 
@@ -434,7 +434,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
     checkAnswer (df, expected.toDF () )
   }
 
-  ignore ("test window funnel 0004") {
+  test ("test window funnel 0004") {
     val colNames = Seq ("event_id", "user_id", "uid", "event_time", "access_time",
       "string1", "string2", "int1", "int2",
       "bigint1", "bigint2", "double1", "double2", "id")
@@ -457,7 +457,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "string_1", "string_2", 1, 2, 1L, 2L, 1d, 2d, 13)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events1")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select user_id, window_funnel(\n" +
         " 5 * 24 * 60 * 60,\n" +
         " 6,\n" +
@@ -473,10 +473,12 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "group by user_id\n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().sortBy(_.toString).toSeq.toString
+    val expect = "WrappedArray([100000001,[4,1647581938058,100000001,7,9]])"
+    assert(result == expect)
   }
 
-  ignore ("test window funnel 0003") {
+  test ("test window funnel 0003") {
     val colNames = Seq ("event_id", "user_id", "uid", "event_time", "access_time",
       "string1", "string2", "int1", "int2",
       "bigint1", "bigint2", "double1", "double2", "id")
@@ -509,7 +511,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "string_1", "string_2", 1, 2, 1L, 2L, 1d, 2d, 18)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events1")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select user_id, window_funnel(\n" +
         " 5 * 24 * 60 * 60,\n" +
         " 6,\n" +
@@ -527,10 +529,13 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "group by user_id\n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([100000001,[4,1647581938061,100000001,10,12]]," +
+      " [100000002,[0,1647581938070,null,null,null]])"
+    assert(actual == result)
   }
 
-  ignore ("test window funnel 0002") {
+  test ("test window funnel 0002") {
     val colNames = Seq ("event_id", "user_id", "uid", "event_time", "access_time",
       "string1", "string2", "int1", "int2",
       "bigint1", "bigint2", "double1", "double2", "id")
@@ -597,7 +602,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "string_1", "string_2", 1, 2, 1L, 2L, 1d, 2d, 35)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events1")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select user_id, window_funnel(\n" +
         " 5 * 24 * 60 * 60,\n" +
         " 6,\n" +
@@ -613,10 +618,16 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "group by user_id\n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([100000001,[3,1647581938058,100000001,7,9]]," +
+      " [100000002,[3,1647581938064,100000002,13,15]]," +
+      " [100000003,[3,1647581938070,100000003,19,21]]," +
+      " [100000004,[3,1647581938076,100000004,25,27]]," +
+      " [100000005,[3,1647581938082,100000005,31,33]])"
+    assert(actual == result)
   }
 
-  ignore ("test window funnel 0001") {
+  test ("test window funnel 0001") {
     val colNames = Seq ("event_id", "user_id", "uid", "event_time", "access_time",
       "string1", "string2", "int1", "int2",
       "bigint1", "bigint2", "double1", "double2", "id")
@@ -659,32 +670,29 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "string_1", "string_2", 1, 2, 1L, 2L, 1d, 2d, 23)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events1")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select user_id, window_funnel(\n" +
         " 5 * 24 * 60 * 60,\n" +
         " 6,\n" +
         " event_time,\n" +
-        // " case when event_id = 0 or event_id = 2 then '0, 2'\n" +
         " case when event_id = 0 then '0, 2'\n" +
         " when event_id = 1 then '1'\n" +
-        // " when event_id = 2 then '2'\n" +
         " when event_id = 3 then '3'\n" +
-        // " when event_id = 4 then '4'\n" +
-        // " when event_id = 5 then '5'\n" +
         " else -1 end, \n" +
-        // " cast(event_id as char),\n" +
-        // " event_id,\n" +
-        // " array(0, 1, 0),\n" +
         " bigint1,\n" +
         " struct(struct(2, user_id), struct(1, id), struct(3, id))\n ) seq\n" +
         "from events1\n" +
         "group by user_id\n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([100000001,[3,1647581938058,100000001,7,9]]," +
+      " [100000002,[3,1647581938064,100000002,13,15]]," +
+      " [100000003,[3,1647581938070,100000003,19,21]])"
+    assert(actual == result)
   }
 
-  ignore ("test window funnel 0000") {
+  test ("test window funnel 0000") {
     val colNames = Seq ("event_id", "user_id", "uid", "event_time", "access_time",
       "string1", "string2", "int1", "int2",
       "bigint1", "bigint2", "double1", "double2", "id")
@@ -727,7 +735,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "string_1", "string_2", 1, 2, 1L, 2L, 1d, 2d, 23)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events1")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select user_id, window_funnel(\n" +
         " 5 * 24 * 60 * 60,\n" +
         " 6,\n" +
@@ -739,10 +747,14 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "group by user_id\n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([100000001,[5,1647581938058,100000001,7]]," +
+      " [100000002,[5,1647581938064,100000002,13]]," +
+      " [100000003,[5,1647581938070,100000003,19]])"
+    assert(actual == result)
   }
 
-  ignore ("test window funnel 002") {
+  test ("test window funnel 002") {
     val colNames = Seq ("lstg_format_name", "cal_dt", "lstg_site_id",
       "seller_id", "trans_id")
 
@@ -757,7 +769,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
 
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("test_kylin_fact")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select seller_id," +
         " window_funnel(\n 5 * 24 * 60 * 60, \n" +
         " 4, \n" +
@@ -777,10 +789,12 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "group by seller_id \n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([10000294,[3,1325376000000,10000294,3]])"
+    assert(actual == result)
   }
 
-  ignore ("test window funnel 001") {
+  test ("test window funnel 001") {
     val colNames = Seq ("lstg_format_name", "cal_dt", "lstg_site_id",
       "seller_id", "trans_id")
 
@@ -807,7 +821,7 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       , ("ABIN", "2012-01-01", 3, 10000081, 16)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("test_kylin_fact")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select seller_id," +
         " window_funnel(\n 5 * 24 * 60 * 60, \n" +
         " 4, \n" +
@@ -828,10 +842,25 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
         "group by seller_id \n" +
         "order by seq desc\n" +
         "LIMIT 500"
-    ), Seq ((901, 5), (902, 2) ) )
+    ).collect().toSeq.sortBy(_.toString).toString
+    val actual = "WrappedArray([10000025,[-1,-1,null,null]]," +
+      " [10000081,[0,1325376000000,null,null]]," +
+      " [10000117,[-1,-1,null,null]]," +
+      " [10000207,[-1,-1,null,null]]," +
+      " [10000288,[-1,-1,null,null]]," +
+      " [10000294,[3,1325376000000,10000294,3]]," +
+      " [10000392,[-1,-1,null,null]]," +
+      " [10000397,[-1,-1,null,null]]," +
+      " [10000403,[-1,-1,null,null]]," +
+      " [10000527,[0,1325376000000,null,null]]," +
+      " [10000549,[-1,-1,null,null]]," +
+      " [10000670,[-1,-1,null,null]]," +
+      " [10000753,[-1,-1,null,null]]," +
+      " [10000896,[0,1325376000000,null,null]])"
+    assert(actual == result)
   }
 
-  ignore ("test window funnel 000") {
+  test ("test window funnel 000") {
     val colNames = Seq ("uid", "eid", "dim1", "dim2",
       "o_dim1", "o_dim2", "o_dim3", "dim3", "dim4", "ts")
 
@@ -853,18 +882,20 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       , (902, 5, "ee005", "cc5", 25L, 4.5d, 0.14f, null, null, "2021-01-05")
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events00")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select uid, " +
         "window_funnel(100000, 6, ts, eid - 1, dim3, " +
         "struct(struct(1,eid),struct(2,dim1),struct(1,eid)" +
         ",struct(2,dim2),struct(2,dim2)" +
         ",struct(3,o_dim1),struct(3,o_dim2),struct(3,o_dim3),struct(3,dim4)" +
         "))" +
-        " from events00 group by uid"), Seq ((901, 5), (902, 2) ) )
+        " from events00 group by uid").collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([901,[1,1609545600000,2,null,2,null,null,null,null,null,null]]," +
+      " [902,[0,1609545600000,null,null,null,null,null,null,null,null,null]])"
+    assert(actual == result)
   }
 
-  // ignore("test window funnel") {
-  ignore ("test window funnel") {
+  test ("test window funnel") {
     val colNames = Seq ("uid", "eid", "dim1", "dim2",
       "o_dim1", "o_dim2", "o_dim3", "dim3", "ts")
 
@@ -888,18 +919,20 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       , (902, 5, "ee005", "cc5", 25L, 4.5d, 0.14f, null, 1005L)
     ).toDF (colNames: _*)
     df1.createOrReplaceTempView ("events00")
-    checkWindowAnswer (spark.sql (
+    val result = spark.sql (
       "select uid, " +
         "window_funnel(100000, 6, ts, eid - 1, dim3, " +
         "struct(struct(1,eid),struct(2,dim1),struct(1,eid)" +
         ",struct(2,dim2),struct(2,dim2)" +
         ",struct(3,o_dim1),struct(3,o_dim2),struct(3,o_dim3)" +
         "))" +
-        " from events00 group by uid"), Seq ((901, 5), (902, 2) ) )
+        " from events00 group by uid").collect().sortBy(_.toString).toSeq.toString
+    val actual = "WrappedArray([901,[5,1646364222007,2,null3,2,aa3,aa3,4,2.41,0.41]]," +
+      " [902,[4,1001,2,ee003,2,cc3,cc3,24,4.4,0.13]])"
+    assert(actual == result)
 
+    val colNames2 = Seq ("uid", "eid", "dim1", "dim2", "ts")
     val df2 = Seq (
-      // "uid", "eid", "dim1", "dim2", "ts"
-      // multiple sequence
       (901, 1, null, null, 1)
       , (901, 2, null, null, 2)
       , (901, 1, null, null, 3)
@@ -908,14 +941,15 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       , (901, 2, null, null, 6)
       , (901, 4, null, null, 7)
       , (901, 5, null, null, 11)
-    ).toDF (colNames: _*)
+    ).toDF (colNames2: _*)
     df2.createOrReplaceTempView ("events")
-    checkWindowAnswer (spark.sql ("select uid, window_funnel(10, 5, ts, eid - 1, null)" +
-      " from events group by uid"), Seq ((901, 5) ) )
+    val result2 = spark.sql ("select uid, window_funnel(10, 5, ts, eid - 1, null, null)" +
+      " from events group by uid").collect().sortBy(_.toString).toSeq.toString
+    val actual2 = "WrappedArray([901,[4,1]])"
+    assert(actual2 == result2)
 
+    val colNames3 = Seq ("uid", "eid", "dim1", "dim2", "ts")
     val df3 = Seq (
-      // "uid", "eid", "dim1", "dim2", "ts"
-      // multiple sequence with dim
       (901, 1, "CN", null, 1)
       , (901, 2, null, null, 2)
       , (901, 1, null, null, 3)
@@ -933,16 +967,18 @@ class TypedImperativeAggregateSuite extends QueryTest with SharedSparkSession {
       , (902, 2, null, null, 6)
       , (902, 4, null, "US", 7)
       , (902, 5, null, null, 8)
-    ).toDF (colNames: _*)
-    df3.createOrReplaceTempView ("events")
-    checkWindowAnswer (spark.sql (
+    ).toDF (colNames3: _*)
+    df3.createOrReplaceTempView ("events3")
+    val result3 = spark.sql (
       "select uid, window_funnel(10, 5, ts, eid - 1, " +
         "case when eid = 1 then dim1 " +
         "when eid = 2 then null " +
         "when eid = 3 then dim2 " +
         "when eid = 4 then dim2 " +
-        "else null end) from events group by uid"),
-      Seq ((901, 5), (902, 3) ) )
+        "else null end, null) from events3 group by uid")
+      .collect().sortBy(_.toString).toSeq.toString
+    val actual3 = "WrappedArray([901,[4,1]], [902,[2,1]])"
+    assert(actual3 == result3)
   }
 
   ignore ("test window funnel radnom") {
