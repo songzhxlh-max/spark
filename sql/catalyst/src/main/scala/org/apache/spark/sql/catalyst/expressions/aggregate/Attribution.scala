@@ -20,6 +20,7 @@ package org.apache.spark.sql.catalyst.expressions.aggregate
 import java.nio.ByteBuffer
 
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -80,7 +81,7 @@ case class Attribution(windowLitExpr: Expression,
                        groupingInfoExpr: Expression,
                        mutableAggBufferOffset: Int = 0,
                        inputAggBufferOffset: Int = 0)
-  extends TypedImperativeAggregate[Seq[AttrEvent]]
+  extends TypedImperativeAggregate[ListBuffer[AttrEvent]]
     with Serializable with Logging with SerializerSupport {
 
   import EvalHelper._
@@ -169,9 +170,9 @@ case class Attribution(windowLitExpr: Expression,
   val POSITION = "POSITION"
   val DECAY = "DECAY"
 
-  override def createAggregationBuffer(): Seq[AttrEvent] = Seq[AttrEvent]()
+  override def createAggregationBuffer(): ListBuffer[AttrEvent] = ListBuffer[AttrEvent]()
 
-  override def update(buffer: Seq[AttrEvent], input: InternalRow): Seq[AttrEvent] = {
+  override def update(buffer: ListBuffer[AttrEvent], input: InternalRow): ListBuffer[AttrEvent] = {
     // convert single row to all possible events
     val names = evalEventNames(input)
     if (names.isEmpty) {
@@ -216,12 +217,12 @@ case class Attribution(windowLitExpr: Expression,
     }).filter(_._2 != null)
   }
 
-  override def merge(buffer: Seq[AttrEvent],
-                     input: Seq[AttrEvent]): Seq[AttrEvent] = {
+  override def merge(buffer: ListBuffer[AttrEvent],
+                     input: ListBuffer[AttrEvent]): ListBuffer[AttrEvent] = {
     buffer ++ input
   }
 
-  override def eval(buffer: Seq[AttrEvent]): GenericArrayData = {
+  override def eval(buffer: ListBuffer[AttrEvent]): GenericArrayData = {
     toResultForm(
       eventRelationType match {
         case NONE | TARGET_TO_SOURCE =>
@@ -235,7 +236,7 @@ case class Attribution(windowLitExpr: Expression,
   }
 
   // eval with no look ahead events
-  private def doEvalSimple(events: Seq[AttrEvent]): Seq[AttrEvent] = {
+  private def doEvalSimple(events: ListBuffer[AttrEvent]): ListBuffer[AttrEvent] = {
     // reverse sort
     val sorted = events.sortBy(e => (- e.ts, - e.typeOrdering, e.name))
 
@@ -269,10 +270,11 @@ case class Attribution(windowLitExpr: Expression,
       resultEvents ++= calculateContrib(target, sourceEvents)
     }
 
-    resultEvents.toSeq
+    val resultEventsBuffer = ListBuffer[AttrEvent]()
+    resultEventsBuffer ++ resultEvents.toList
   }
 
-  private def doEvalWithLookAheadEvents(events: Seq[AttrEvent]): Seq[AttrEvent] = {
+  private def doEvalWithLookAheadEvents(events: ListBuffer[AttrEvent]): ListBuffer[AttrEvent] = {
     // reverse sort by event ts and type
     // types are in ordering of SOURCE, AHEAD, TARGET
     val sorted = events.sortBy(e => (- e.ts, - e.typeOrdering, e.name))
@@ -290,11 +292,12 @@ case class Attribution(windowLitExpr: Expression,
       }
     }
 
-    resultEvents.toSeq
+    val resultEventsBuffer = ListBuffer[AttrEvent]()
+    resultEventsBuffer ++ resultEvents.toSeq
   }
 
   private def searchSourceEvents(target: AttrEvent,
-                                 events: Seq[AttrEvent]): mutable.Stack[AttrEvent] = {
+                                 events: ListBuffer[AttrEvent]): mutable.Stack[AttrEvent] = {
     val result = mutable.Stack[AttrEvent]()
     val aheadEvents = mutable.Queue[AttrEvent]()
     for (event <- events) {
@@ -337,10 +340,10 @@ case class Attribution(windowLitExpr: Expression,
   }
 
   private def calculateContrib(target: AttrEvent,
-                               sourceEvents: mutable.Stack[AttrEvent]): Seq[AttrEvent] = {
+                               sourceEvents: mutable.Stack[AttrEvent]): ListBuffer[AttrEvent] = {
     // target event with no source events
     if (sourceEvents.isEmpty) {
-      return Seq(
+      return ListBuffer(
         AttrEvent("d", AttrEvent.SOURCE, 0, Array(), null, 0, Array())
       )
     }
@@ -394,7 +397,8 @@ case class Attribution(windowLitExpr: Expression,
           updateMeasures(target, e)
         }
     }
-    sourceEvents
+    val sourceEventsBufferList = ListBuffer[AttrEvent]()
+    sourceEventsBufferList ++ sourceEvents
   }
 
   private def updateMeasures(target: AttrEvent, source: AttrEvent): Unit = {
@@ -412,7 +416,7 @@ case class Attribution(windowLitExpr: Expression,
   }
 
 
-  private def toResultForm(events: Seq[AttrEvent]): GenericArrayData = {
+  private def toResultForm(events: ListBuffer[AttrEvent]): GenericArrayData = {
     new GenericArrayData(
       events.map(e =>
         if (e.measureContrib == null) {
@@ -433,11 +437,11 @@ case class Attribution(windowLitExpr: Expression,
       StructField("groupingInfos", groupingInfoExpr.dataType)
     )))
 
-  override def serialize(buffer: Seq[AttrEvent]): Array[Byte] = {
+  override def serialize(buffer: ListBuffer[AttrEvent]): Array[Byte] = {
     serializerInstance.serialize(buffer).array()
   }
 
-  override def deserialize(storageFormat: Array[Byte]): Seq[AttrEvent] = {
+  override def deserialize(storageFormat: Array[Byte]): ListBuffer[AttrEvent] = {
     serializerInstance.deserialize(ByteBuffer.wrap(storageFormat))
   }
 
