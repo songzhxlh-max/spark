@@ -1270,7 +1270,8 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
           "PushedFilters: [DEPT IS NOT NULL, ABS(DEPT - 3) > 1, " +
             "(COALESCE(CAST(SALARY AS double), BONUS)) > 2000.0]"
         } else {
-          "PushedFilters: [DEPT IS NOT NULL]"
+          "PushedFilters: [DEPT IS NOT NULL, " +
+            "(COALESCE(CAST(SALARY AS double), BONUS)) > 2000.0]"
         }
         checkPushedInfo(df5, expectedPlanFragment5)
         checkAnswer(df5, Seq(Row(1, "amy", 10000, 1000, true),
